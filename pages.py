@@ -157,7 +157,7 @@ def display_results(today_price, today_change, historical_mean, historical_std_d
 
 
 def display_simulated_exchanges(api_price):
-    """Simulates stock exchange prices and generates a bar chart."""
+    """Simulates stock exchange prices and generates a bar chart with a textual description."""
     exchanges = [
         "Deutsche Boerse AG",
         "Boerse Stuttgart",
@@ -168,21 +168,31 @@ def display_simulated_exchanges(api_price):
         "SIX (API Price)"
     ]
 
+    # Determine if all exchanges strongly deviate from SIX
+    all_deviate = random.random() < 0.05
+
     # Initialize simulated prices with API price as base
     simulated_prices = []
 
-    for exchange in exchanges:
-        if exchange == "SIX (API Price)":
-            simulated_prices.append(api_price)
-        else:
-            rand = random.random()
-            if rand < 0.90:
-                simulated_price = api_price
-            elif rand < 0.95:
-                simulated_price = api_price * random.uniform(0.9, 1.1)  # Slight deviation
+    if all_deviate:
+        # Strongly deviate all other sources from SIX (API Price) but remain similar to each other
+        common_price = api_price * random.uniform(0.7, 1.3)
+        for exchange in exchanges[:-1]:  # All except SIX (API Price)
+            simulated_prices.append(common_price)
+        simulated_prices.append(api_price)  # Add the original API price at the end
+    else:
+        for exchange in exchanges:
+            if exchange == "SIX (API Price)":
+                simulated_prices.append(api_price)
             else:
-                simulated_price = api_price * random.uniform(0.7, 1.3)  # Strong deviation
-            simulated_prices.append(simulated_price)
+                rand = random.random()
+                if rand < 0.90:
+                    simulated_price = api_price
+                elif rand < 0.95:
+                    simulated_price = api_price * random.uniform(0.9, 1.1)  # Slight deviation
+                else:
+                    simulated_price = api_price * random.uniform(0.7, 1.3)  # Strong deviation
+                simulated_prices.append(simulated_price)
 
     simulated_prices = np.round(simulated_prices, 2)
     mean_price = np.mean(simulated_prices)
@@ -202,9 +212,21 @@ def display_simulated_exchanges(api_price):
     ax.set_yticklabels(exchanges)
     ax.invert_yaxis()  # Invert y-axis to have the first exchange at the top
     ax.set_xlabel("Preis (in CHF)")
-    ax.set_title("Price Development", fontsize=15, fontweight='bold')
+    ax.set_title("Price Sources", fontsize=15, fontweight='bold')
 
     st.pyplot(fig)
+
+    # Count how many exchanges have the same price as "SIX (API Price)"
+    identical_prices = sum(1 for price in simulated_prices[:-1] if price == api_price)
+    different_prices = len(exchanges) - 1 - identical_prices
+
+    # Prepare textual description
+    if different_prices > 2:
+        st.error(f"{different_prices} out of {len(exchanges) - 1} exchanges have different prices compared to SIX (API Price).")
+    else:
+        st.success(f"Only {different_prices} out of {len(exchanges) - 1} exchanges have different prices compared to SIX (API Price).")
+
+
 
 
 def process_asset_data(selected_asset, threshold):
@@ -282,6 +304,7 @@ def analysis_page():
             st.title("Stocks Above Threshold")
             columns_to_display = ['fullName', 'change', 'z_score']
             gb = GridOptionsBuilder.from_dataframe(filtered_stocks_df[columns_to_display])
+            gb.configure_column('fullName', width=200)
             gb.configure_selection('single', use_checkbox=True, pre_selected_rows=[0])
             grid_options = gb.build()
             selection = AgGrid(
