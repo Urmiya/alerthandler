@@ -58,27 +58,37 @@ def fetch_news(symbol):
     url = f"https://financialmodelingprep.com/api/v3/stock_news?tickers={symbol}&limit=5&apikey={api_key}"
     response = requests.get(url)
     if response.status_code == 200:
-        return response.json()
+        return response.json()  # Returns a list of news articles
     else:
         st.error("Failed to fetch news")
         return []
 
-def get_chatgpt_summary(news_articles, today_change, full_name, symbol):
-    news_text = ' '.join([article['text'] for article in news_articles])
-    query = f"Summarize the following news related to {full_name} ({symbol}) which experienced a {today_change:.2f}% change yesterday: {news_text}"
+
+def get_chatgpt_summary(news_articles, symbol):
+    if not news_articles:
+        return "No recent news to analyze."
+
+    # Create a summary of key points from the articles
+    news_summary = ' '.join([article['title'] + ": " + article['text'] for article in news_articles])
+    
+    # Query asks for specific analysis based on summarized news
+    query = f"Based on the following summarized news points, analyze the potential impact on the price of {symbol} and the likelihood of significant price deviations today: {news_summary}"
+
     try:
         chat_completion = client.chat.completions.create(
             messages=[{"role": "user", "content": query}],
             model="gpt-4",
-            max_tokens=250
+            max_tokens=250  # Increased token count to allow a more detailed analysis
         )
         if chat_completion.choices and chat_completion.choices[0].message:
             return chat_completion.choices[0].message.content.strip()
         else:
-            return "No summary available."
+            return "Analysis not available or inconclusive."
     except Exception as e:
-        st.error(f"Failed to retrieve summary due to an API error: {str(e)}")
+        st.error(f"Failed to retrieve analysis due to an API error: {str(e)}")
         return None
+
+
 
 
 def calculate_std_dev(prices):
@@ -109,6 +119,15 @@ def show_info_modal(title, description, unique_identifier):
             st.write(description)
             if st.button("Close", key=f"close_{modal_key}"):
                 pass  # This just closes the modal without any session state handling
+
+def display_news_summary(symbol):
+    with st.expander("News Summary"):
+        news_articles = fetch_news(symbol)
+        if news_articles:
+            summary = get_chatgpt_summary(news_articles, symbol)
+            st.write(summary)
+        else:
+            st.write("No recent news articles found.")
 
 def display_results(today_price, today_change, historical_mean, historical_std_dev, historical_dates, historical_prices, price_change_threshold, z_score_threshold, today_price_data, selected_asset):
     is_outlier, today_z_score, historical_z_scores = outlier_detection(today_price_data, historical_prices, z_score_threshold)
@@ -182,9 +201,8 @@ def display_results(today_price, today_change, historical_mean, historical_std_d
             # Use expanders for additional information instead of modals
             with st.expander("More Info"):
                 st.write(modal_content)
-
-  # Just closes the modal
-
+    
+    display_news_summary(selected_asset['symbol'])
 
 def display_simulated_exchanges(api_price, graph_height=500):
     exchanges = [
