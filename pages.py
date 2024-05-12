@@ -13,6 +13,7 @@ from openai import OpenAI
 from streamlit_modal import Modal
 import base64
 import random
+from streamlit.components.v1 import html
 
 # Initialize OpenAI client
 client = OpenAI(
@@ -40,7 +41,7 @@ def fetch_stock_data(symbol):
 def fetch_historical_data(symbol):
     try:
         api_key = st.secrets["api_keys"]["API_KEY"]
-        url = f"{BASE_URL}historical-price-full/{symbol}?timeseries=180&apikey={api_key}"
+        url = f"{BASE_URL}historical-price-full/{symbol}?timeseries=90&apikey={api_key}"  # Changed from 180 to 90
         response = requests.get(url)
         response.raise_for_status()
         data = response.json()['historical']
@@ -79,6 +80,7 @@ def get_chatgpt_summary(news_articles, today_change, full_name, symbol):
         st.error(f"Failed to retrieve summary due to an API error: {str(e)}")
         return None
 
+
 def calculate_std_dev(prices):
     if not prices:
         return 0, 0
@@ -100,16 +102,13 @@ def outlier_detection(today_price, historical_prices, z_score_threshold):
     is_outlier = abs(today_z_score) > z_score_threshold
     return is_outlier, today_z_score, historical_z_scores
 
-def show_info_modal(graph_title, graph_description):
-    """Displays a modal with information about a specific graph."""
-    modal_key = f"modal_{graph_title.replace(' ', '_')}"
-    modal = Modal(key=modal_key, title=graph_title)
-    if modal.is_open():
-        with modal.container():
-            st.markdown(graph_description)
-            st.button("Close", on_click=modal.close)
-    return modal
-
+def show_info_modal(title, description, unique_identifier):
+    modal_key = f"modal_{unique_identifier}"  # Generating a unique key based on some unique identifier
+    if st.button("ℹ️", key=f"info_button_{modal_key}"):
+        with Modal(title=title, key=modal_key).container():
+            st.write(description)
+            if st.button("Close", key=f"close_{modal_key}"):
+                pass  # This just closes the modal without any session state handling
 
 def display_results(today_price, today_change, historical_mean, historical_std_dev, historical_dates, historical_prices, price_change_threshold, z_score_threshold, today_price_data, selected_asset):
     is_outlier, today_z_score, historical_z_scores = outlier_detection(today_price_data, historical_prices, z_score_threshold)
@@ -123,41 +122,67 @@ def display_results(today_price, today_change, historical_mean, historical_std_d
         "Percentage Change": [f"{today_change:.2f}%"],
         "Change Above Threshold": ["Yes" if abs(today_change) > price_change_threshold else "No"],
         "Today's Z-Score": [f"{today_z_score:.2f}"],
-        "Outlier Status": ["Yes" if is_outlier else "No"]
+        "Outlier Status": ["Yes" if is_outlier else "No"],
+        "Type": [selected_asset.get('type', 'Unknown')]  # Use .get() with a default value
     })
 
-    st.write(results_df)
+    col_df, col_buttons = st.columns([8, 2])
+    with col_df:
+        st.write(results_df)
+    with col_buttons:
+        col_check, col_mail = st.columns([1, 1])
+        with col_check:
+            if st.button("✔️", key="check_button"):
+                st.write("Checkmark button clicked!")
+        with col_mail:
+            if st.button("✉️", key="mail_button"):
+                st.write("Mail button clicked!")
 
-    col1, col2, col3 = st.columns(3)
+    # Manually define graph heights
+    graph_height_1 = 300
+    graph_height_2 = 400
+    graph_height_3 = 600
 
-    with col1:
-        plot_historical_prices(historical_dates, historical_prices)
-        # Add the threshold check summary under the graph
-        if abs(today_change) > price_change_threshold:
-            st.error(f"The price change today is {today_change:.2f}%, which is above the {price_change_threshold}% threshold.")
-        else:
-            st.success(f"The price change today is {today_change:.2f}%, which is below the {price_change_threshold}% threshold.")
+    # Container for all three graphs
+    col_graphs = st.columns(3)
+    for i, (graph, title, modal_content, is_outlier_check, change_check) in enumerate([
+        (lambda: plot_historical_prices(historical_dates, historical_prices, graph_height_1), 
+         "Historical Price Development", 
+         "This graph shows the price development of the selected asset over the last 90 days, plotting daily closing prices.",
+         None, 
+         abs(today_change) > price_change_threshold),
+        (lambda: plot_price_distribution(historical_mean, historical_std_dev, today_price, graph_height_2), 
+         "Normal Distribution of Historical Prices", 
+         "This graph depicts the normal distribution of historical prices, highlighting how today's price compares to the distribution, indicating whether it is considered an outlier.",
+         is_outlier, 
+         None),
+        (lambda: display_simulated_exchanges(today_price, graph_height_3), 
+         "Simulated Exchanges", 
+         "This graph simulates different exchange prices for the selected asset, showing variations and how the official price compares to these simulations.",
+         None, 
+         None)
+    ]):
+        with col_graphs[i]:
+            st.markdown(f"### {title}")
+            graph()
+            subcol_message = st.columns([1])
+            with subcol_message[0]:
+                if change_check:
+                    st.error(f"The price change today is {today_change:.2f}%, which is above the {price_change_threshold}% threshold.")
+                if is_outlier_check is not None:
+                    if is_outlier_check:
+                        st.error(f"Today's price change is an outlier with a Z-score of {today_z_score:.2f}.")
+                    else:
+                        st.success("Today's price change is not considered an outlier based on Z-scores.")
+            
+            # Use expanders for additional information instead of modals
+            with st.expander("More Info"):
+                st.write(modal_content)
 
-    with col2:
-        plot_price_distribution(historical_mean, historical_std_dev, today_price)
-        # Add the Z-score threshold check summary under the graph
-        if is_outlier:
-            st.error(f"Today's price change is an outlier with a Z-score of {today_z_score:.2f}.")
-        else:
-            st.success("Today's price change is not considered an outlier based on Z-scores.")
-
-    with col3:
-        display_simulated_exchanges(today_price)
-
-    csv = results_df.to_csv(index=False)
-    b64 = base64.b64encode(csv.encode()).decode()
-    href = f'<a href="data:file/csv;base64,{b64}" download="{selected_asset["symbol"]}_price_results.csv">Download Results as CSV</a>'
-    st.markdown(href, unsafe_allow_html=True)
+  # Just closes the modal
 
 
-
-def display_simulated_exchanges(api_price):
-    """Simulates stock exchange prices and generates a bar chart with a textual description."""
+def display_simulated_exchanges(api_price, graph_height=500):
     exchanges = [
         "Deutsche Boerse AG",
         "Boerse Stuttgart",
@@ -165,44 +190,42 @@ def display_simulated_exchanges(api_price):
         "Boerse Hannover",
         "Boerse Düsseldorf",
         "Boerse Berlin",
-        "SIX (API Price)"
+        "Eval. Price"  # Renamed from "SIX (API Price)"
     ]
 
-    # Determine if all exchanges strongly deviate from SIX
     all_deviate = random.random() < 0.05
 
-    # Initialize simulated prices with API price as base
     simulated_prices = []
-
     if all_deviate:
-        # Strongly deviate all other sources from SIX (API Price) but remain similar to each other
         common_price = api_price * random.uniform(0.7, 1.3)
-        for exchange in exchanges[:-1]:  # All except SIX (API Price)
+        for exchange in exchanges[:-1]:
             simulated_prices.append(common_price)
-        simulated_prices.append(api_price)  # Add the original API price at the end
+        simulated_prices.append(api_price)
     else:
         for exchange in exchanges:
-            if exchange == "SIX (API Price)":
+            if exchange == "Eval. Price":
                 simulated_prices.append(api_price)
             else:
                 rand = random.random()
                 if rand < 0.90:
                     simulated_price = api_price
                 elif rand < 0.95:
-                    simulated_price = api_price * random.uniform(0.9, 1.1)  # Slight deviation
+                    simulated_price = api_price * random.uniform(0.9, 1.1)
                 else:
-                    simulated_price = api_price * random.uniform(0.7, 1.3)  # Strong deviation
+                    simulated_price = api_price * random.uniform(0.7, 1.3)
                 simulated_prices.append(simulated_price)
 
     simulated_prices = np.round(simulated_prices, 2)
     mean_price = np.mean(simulated_prices)
 
-    # Create bar chart
-    fig, ax = plt.subplots(figsize=(5, 5))  # Adjust width to make the chart less wide
+    fig, ax = plt.subplots(figsize=(6, graph_height / 100))
 
     y_pos = np.arange(len(exchanges))
     colors = ['#888888'] * len(exchanges)
-    colors[-1] = '#ff0000'  # Highlight "SIX (API Price)" in red
+    colors[-1] = '#ff0000'  # Keep the Eval. Price bar red
+    # Select one random bar (other than Eval. Price) to be blue
+    random_bar_index = random.choice([i for i in range(len(colors)-1)])
+    colors[random_bar_index] = '#0000ff'
 
     ax.barh(y_pos, simulated_prices, color=colors)
     ax.axvline(mean_price, color='orange', linestyle='-', linewidth=2)
@@ -210,22 +233,15 @@ def display_simulated_exchanges(api_price):
 
     ax.set_yticks(y_pos)
     ax.set_yticklabels(exchanges)
-    ax.invert_yaxis()  # Invert y-axis to have the first exchange at the top
-    ax.set_xlabel("Preis (in CHF)")
-    ax.set_title("Price Sources", fontsize=15, fontweight='bold')
+    ax.invert_yaxis()
+    ax.set_xlabel("Price (in CHF)")
 
     st.pyplot(fig)
 
-    # Count how many exchanges have the same price as "SIX (API Price)"
     identical_prices = sum(1 for price in simulated_prices[:-1] if price == api_price)
     different_prices = len(exchanges) - 1 - identical_prices
 
-    # Prepare textual description
-    if different_prices > 2:
-        st.error(f"{different_prices} out of {len(exchanges) - 1} exchanges have different prices compared to SIX (API Price).")
-    else:
-        st.success(f"Only {different_prices} out of {len(exchanges) - 1} exchanges have different prices compared to SIX (API Price).")
-
+    st.success(f"{identical_prices} exchanges delivered the same price as Eval. Price.")
 
 
 
@@ -241,31 +257,48 @@ def process_asset_data(selected_asset, threshold):
     historical_mean, historical_std_dev = calculate_std_dev(historical_prices)
     return today_price, today_change, historical_mean, historical_std_dev, historical_dates, historical_prices, threshold
 
-def plot_historical_prices(historical_dates, historical_prices):
+def plot_historical_prices(historical_dates, historical_prices, graph_height=400):
     df = pd.DataFrame({'Date': pd.to_datetime(historical_dates), 'Price': historical_prices})
-    fig = px.line(df, x='Date', y='Price', title='Historical Price Development (Last 180 Days)',
-                  labels={'Price': 'Closing Price ($)'})
-    fig.update_xaxes(rangeslider_visible=False)  # Remove the range slider
-    fig.update_layout(title_font=dict(size=15, family='Arial', color='black', weight='bold'))  # Ensure consistent title style
+    fig = px.line(
+        df,
+        x='Date',
+        y='Price',
+        labels={'Price': 'Closing Price ($)'}
+    )
+
+    fig.update_layout(
+        xaxis_title=None,
+        yaxis_title=None,
+        height=graph_height,
+        margin=dict(l=20, r=20, t=20, b=30)
+    )
+
+    fig.update_xaxes(rangeslider_visible=False)
     st.plotly_chart(fig, use_container_width=True)
 
 
 
-def plot_price_distribution(historical_mean, historical_std_dev, today_price):
+
+def plot_price_distribution(historical_mean, historical_std_dev, today_price, graph_height=450):
     x_range = np.linspace(historical_mean - 3 * historical_std_dev, historical_mean + 3 * historical_std_dev, 400)
     y_range = stats.norm.pdf(x_range, historical_mean, historical_std_dev)
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots(figsize=(6, graph_height / 100))  # Set consistent figure size
+
     ax.plot(x_range, y_range, label='Historical Price Distribution', color='blue')
     ax.fill_between(x_range, 0, y_range, where=(x_range <= today_price), color='green', alpha=0.5)
     today_price_point = stats.norm.pdf(today_price, historical_mean, historical_std_dev)
     ax.plot([today_price, today_price], [0, today_price_point], color='red', linestyle='dashed', label=f"Today's Price = {today_price}")
     average_price_point = stats.norm.pdf(historical_mean, historical_mean, historical_std_dev)
-    ax.plot([historical_mean, historical_mean], [0, average_price_point], color='yellow', linestyle='dashed', label=f"180-Day Average Price = {historical_mean}")
+    ax.plot([historical_mean, historical_mean], [0, average_price_point], color='yellow', linestyle='dashed', label=f"90-Day Average Price = {historical_mean: .2f}")
+
     ax.legend(loc='upper right')
-    ax.set_title('Normal Distribution of Historical Prices', fontsize=15, fontweight='bold')
     ax.set_xlabel('Price')
     ax.set_ylabel('Probability Density')
+
     st.pyplot(fig)
+
+
+
 
 
 
@@ -291,10 +324,10 @@ def analysis_page():
         page_title="Stock Analysis App",
         layout="wide"
     )
-
+    
     threshold = STOCK_THRESHOLD
 
-    
+    # Filter stocks based on threshold
     filtered_stocks_df = filter_stocks_above_threshold(SWISS_MARKET_ASSETS, threshold)
 
     # Ensure the DataFrame is not empty
@@ -302,9 +335,9 @@ def analysis_page():
         # Sidebar: Display Filtered Stocks with Ag-Grid inside the sidebar
         with st.sidebar:
             st.title("Stocks Above Threshold")
-            columns_to_display = ['fullName', 'change', 'z_score']
+            columns_to_display = ['fullName', 'change']
             gb = GridOptionsBuilder.from_dataframe(filtered_stocks_df[columns_to_display])
-            gb.configure_column('fullName', width=200)
+            gb.configure_column('fullName', width=220)
             gb.configure_selection('single', use_checkbox=True, pre_selected_rows=[0])
             grid_options = gb.build()
             selection = AgGrid(
@@ -322,18 +355,25 @@ def analysis_page():
         selected_stock = pd.DataFrame(selection['selected_rows'])
         if not selected_stock.empty:
             full_name_selected = selected_stock.iloc[0]['fullName']
-            selected_asset = filtered_stocks_df[filtered_stocks_df['fullName'] == full_name_selected].iloc[0]
-            st.title(f"Analysis of {selected_asset['symbol']}")
-            result = process_asset_data(selected_asset, threshold)
-            if result:
-                today_price, today_change, historical_mean, historical_std_dev, historical_dates, historical_prices, _ = result
-                today_price_data = fetch_stock_data(selected_asset['symbol'])
-                if today_price_data:
-                    display_results(today_price, today_change, historical_mean, historical_std_dev, historical_dates, historical_prices, threshold, z_score_threshold, today_price_data, selected_asset)
+            filtered_selection = filtered_stocks_df[filtered_stocks_df['fullName'] == full_name_selected]
+            if not filtered_selection.empty:
+                selected_asset = filtered_selection.iloc[0]
+                st.title(f"Analysis of {selected_asset['symbol']}")
+                result = process_asset_data(selected_asset, threshold)
+                if result:
+                    today_price, today_change, historical_mean, historical_std_dev, historical_dates, historical_prices, _ = result
+                    today_price_data = fetch_stock_data(selected_asset['symbol'])
+                    if today_price_data:
+                        display_results(today_price, today_change, historical_mean, historical_std_dev, historical_dates, historical_prices, threshold, z_score_threshold, today_price_data, selected_asset)
+                    else:
+                        st.error("Failed to retrieve today's price data.")
                 else:
-                    st.error("Failed to retrieve today's price data.")
+                    st.error("Failed to process the asset data.")
+            else:
+                st.error("Selected asset not found in the filtered stocks.")
         else:
             st.write("Select a stock from the list to view its analysis.")
     else:
         st.sidebar.write("No stocks above the threshold were found.")
+
 

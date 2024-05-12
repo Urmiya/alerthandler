@@ -52,5 +52,22 @@ SWISS_MARKET_ASSETS = [
     {'symbol': '4UB1.F',  'type': 'ETF'},    # UBS (Irl) ETF plc - MSCI World Socially Responsible UCITS ETF
     {'symbol': 'XBCD.DE', 'type': 'ETF'},    # Xtrackers II - iBoxx Germany Covered Bond Swap UCITS ETF
     {'symbol': 'ISFU.L',  'type': 'ETF'},    # iShares Core FTSE 100 UCITS ETF GBP (Dist)
-    {'symbol': 'IBMK',    'type': 'ETF'}     # iShares iBonds Dec 2022 Term Muni Bond ETF
+    {'symbol': 'IBMK',    'type': 'ETF'},     # iShares iBonds Dec 2022 Term Muni Bond ETF
+
+    # American Financial products
+    {'symbol': 'AAPL', 'fullName': 'Apple Inc.', 'type': 'Stock'},
+    {'symbol': 'MSFT', 'fullName': 'Microsoft Corporation', 'type': 'Stock'},
+    {'symbol': 'GOOGL', 'fullName': 'Alphabet Inc.', 'type': 'Stock'},
+    {'symbol': 'AMZN', 'fullName': 'Amazon.com Inc.', 'type': 'Stock'},
+    {'symbol': 'JNJ', 'fullName': 'Johnson & Johnson', 'type': 'Stock'},
+    {'symbol': 'V', 'fullName': 'Visa Inc.', 'type': 'Stock'},
+    {'symbol': 'PG', 'fullName': 'Procter & Gamble Co.', 'type': 'Stock'},
+    {'symbol': 'TSLA', 'fullName': 'Tesla Inc.', 'type': 'Stock'},
+    {'symbol': 'NFLX', 'fullName': 'Netflix Inc.', 'type': 'Stock'},
+    {'symbol': 'DIS', 'fullName': 'The Walt Disney Company', 'type': 'Stock'},
+    {'symbol': 'NVDA', 'fullName': 'NVIDIA Corporation', 'type': 'Stock'},
+    {'symbol': 'PFE', 'fullName': 'Pfizer Inc.', 'type': 'Stock'},
+    {'symbol': 'WMT', 'fullName': 'Walmart Inc.', 'type': 'Stock'},
+    {'symbol': 'BAC', 'fullName': 'Bank of America Corp', 'type': 'Stock'},
+    {'symbol': 'KO', 'fullName': 'The Coca-Cola Company', 'type': 'Stock'}
 ]
