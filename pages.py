@@ -133,7 +133,11 @@ def display_results(today_price, today_change, historical_mean, historical_std_d
         col_check, col_mail = st.columns([1, 1])
         with col_check:
             if st.button("✔️", key="check_button"):
-                st.write("Checkmark button clicked!")
+                # Mark the stock as removed in session state
+                if 'removed_stocks' not in st.session_state:
+                    st.session_state['removed_stocks'] = {}
+                st.session_state['removed_stocks'][selected_asset['symbol']] = True
+                st.experimental_rerun()  # Rerun the app to refresh the changes
         with col_mail:
             if st.button("✉️", key="mail_button"):
                 st.write("Mail button clicked!")
@@ -305,34 +309,29 @@ def plot_price_distribution(historical_mean, historical_std_dev, today_price, gr
 def filter_stocks_above_threshold(stocks, threshold=STOCK_THRESHOLD):
     results = []
     for stock in stocks:
-        stock_data = fetch_stock_data(stock['symbol'])
-        if stock_data:
-            price_change = ((stock_data['price'] - stock_data['previousClose']) / stock_data['previousClose']) * 100
-            z_score = calculate_modified_z_scores([stock_data['previousClose'], stock_data['price']])[-1]
-            if abs(price_change) > threshold:
-                results.append({
-                    'symbol': stock['symbol'],
-                    'fullName': stock_data['fullName'],
-                    'change': f"{price_change:.2f}%",
-                    'z_score': f"{z_score:.2f}"
-                })
+        # Check if the stock has been marked as removed in the session state
+        if not st.session_state.get('removed_stocks', {}).get(stock['symbol'], False):
+            stock_data = fetch_stock_data(stock['symbol'])
+            if stock_data:
+                price_change = ((stock_data['price'] - stock_data['previousClose']) / stock_data['previousClose']) * 100
+                z_score = calculate_modified_z_scores([stock_data['previousClose'], stock_data['price']])[-1]
+                if abs(price_change) > threshold:
+                    results.append({
+                        'symbol': stock['symbol'],
+                        'fullName': stock_data['fullName'],
+                        'change': f"{price_change:.2f}%",
+                        'z_score': f"{z_score:.2f}"
+                    })
     return pd.DataFrame(results)
 
 
 def analysis_page():
-    st.set_page_config(
-        page_title="Stock Analysis App",
-        layout="wide"
-    )
+    st.set_page_config(page_title="Stock Analysis App", layout="wide")
     
     threshold = STOCK_THRESHOLD
-
-    # Filter stocks based on threshold
     filtered_stocks_df = filter_stocks_above_threshold(SWISS_MARKET_ASSETS, threshold)
 
-    # Ensure the DataFrame is not empty
     if not filtered_stocks_df.empty:
-        # Sidebar: Display Filtered Stocks with Ag-Grid inside the sidebar
         with st.sidebar:
             st.title("Stocks Above Threshold")
             columns_to_display = ['fullName', 'change']
@@ -351,13 +350,14 @@ def analysis_page():
                 theme='material'
             )
 
-        # Main Page: Analyze Selected Stock
-        selected_stock = pd.DataFrame(selection['selected_rows'])
-        if not selected_stock.empty:
-            full_name_selected = selected_stock.iloc[0]['fullName']
-            filtered_selection = filtered_stocks_df[filtered_stocks_df['fullName'] == full_name_selected]
-            if not filtered_selection.empty:
-                selected_asset = filtered_selection.iloc[0]
+        # Ensure selected_rows is safely handled
+        selected_rows = selection.get('selected_rows') if selection else pd.DataFrame()
+        if isinstance(selected_rows, pd.DataFrame) and not selected_rows.empty:
+            selected_stock = selected_rows
+            selected_asset_name = selected_stock.iloc[0]['fullName']
+            matching_assets = filtered_stocks_df[filtered_stocks_df['fullName'] == selected_asset_name]
+            if not matching_assets.empty:
+                selected_asset = matching_assets.iloc[0]
                 st.title(f"Analysis of {selected_asset['symbol']}")
                 result = process_asset_data(selected_asset, threshold)
                 if result:
@@ -370,10 +370,20 @@ def analysis_page():
                 else:
                     st.error("Failed to process the asset data.")
             else:
-                st.error("Selected asset not found in the filtered stocks.")
+                st.write("Selected stock was removed or filtered out. Please select another.")
         else:
-            st.write("Select a stock from the list to view its analysis.")
+            st.write("No stock selected or empty selection.")
     else:
         st.sidebar.write("No stocks above the threshold were found.")
+
+
+
+
+
+
+
+
+
+
 
 
